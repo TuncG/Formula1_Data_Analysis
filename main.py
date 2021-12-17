@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 # Enable the cache
-ff1.Cache.enable_cache('../cache')
+ff1.Cache.enable_cache('./Cache')
 
 # Setup plotting
 plotting.setup_mpl()
@@ -45,4 +45,53 @@ minisectors = [0]
 for i in range(0, (num_minisectors - 1)):
     minisectors.append(minisector_length * (i + 1))
 
-    
+telemetry['Minisector'] = telemetry['Distance'].apply(
+    lambda dist: (
+        int((dist // minisector_length) + 1)
+    )
+)
+
+average_speed = telemetry.groupby(['Minisector', 'Driver'])['Speed'].mean().reset_index()
+
+# Select the driver with the highest average speed
+fastest_driver = average_speed.loc[average_speed.groupby(['Minisector'])['Speed'].idxmax()]
+
+# Get rid of the speed column and rename the driver column
+fastest_driver = fastest_driver[['Minisector', 'Driver']].rename(columns={'Driver': 'Fastest_driver'})
+
+# Join the fastest driver per minisector with the full telemetry
+telemetry = telemetry.merge(fastest_driver, on=['Minisector'])
+
+# Order the data by distance to make matploblib does not get confused
+telemetry = telemetry.sort_values(by=['Distance'])
+
+# Convert driver name to integer
+telemetry.loc[telemetry['Fastest_driver'] == 'VER', 'Fastest_driver_int'] = 1
+telemetry.loc[telemetry['Fastest_driver'] == 'HAM', 'Fastest_driver_int'] = 2
+
+
+x = np.array(telemetry['X'].values)
+y = np.array(telemetry['Y'].values)
+
+points = np.array([x, y]).T.reshape(-1, 1, 2)
+segments = np.concatenate([points[:-1], points[1:]], axis=1)
+fastest_driver_array = telemetry['Fastest_driver_int'].to_numpy().astype(float)
+
+cmap = cm.get_cmap('winter', 2)
+lc_comp = LineCollection(segments, norm=plt.Normalize(1, cmap.N+1), cmap=cmap)
+lc_comp.set_array(fastest_driver_array)
+lc_comp.set_linewidth(5)
+
+plt.rcParams['figure.figsize'] = [18, 10]
+
+plt.gca().add_collection(lc_comp)
+plt.axis('equal')
+plt.tick_params(labelleft=False, left=False, labelbottom=False, bottom=False)
+
+cbar = plt.colorbar(mappable=lc_comp, boundaries=np.arange(1,4))
+cbar.set_ticks(np.arange(1.5, 9.5))
+cbar.set_ticklabels(['VER', 'HAM'])
+
+plt.savefig(f"2021_ver_ham_q.png", dpi=300)
+
+plt.show()
